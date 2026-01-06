@@ -1,1 +1,3 @@
-using hostinger webmail email draft
+# email-draft-send
+
+Hostinger webmail email draft + send automation.
