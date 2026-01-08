@@ -167,16 +167,29 @@ def _append_to_sent(msg):
     # Save a copy to Sent via IMAP so it appears in Hostinger webmail
     try:
         with MailBox(IMAP_HOST).login(IMAP_USER, IMAP_PASS) as mailbox:
-            mailbox.folder.set(SENT_FOLDER)
+            # Check if the folder exists, if not try common alternatives
+            folders = [f.name for f in mailbox.folder.list()]
+
+            # Find the correct sent folder
+            actual_sent_folder = SENT_FOLDER
+            if SENT_FOLDER not in folders:
+                # Try common sent folder names
+                for folder_name in ['Sent', 'Sent Items', 'INBOX.Sent', 'Sent Messages']:
+                    if folder_name in folders:
+                        actual_sent_folder = folder_name
+                        break
+
+            mailbox.folder.set(actual_sent_folder)
             mailbox.client.append(
-                SENT_FOLDER,
-                "(\\Seen)",
+                actual_sent_folder,
+                r'(\Seen)',  # Use raw string for the flag
                 None,
                 msg.as_bytes(),
             )
-        print(f"  Saved copy to {SENT_FOLDER}")
+        print(f"  Saved copy to {actual_sent_folder}")
     except Exception as e:
         print(f"  WARNING: Could not save to Sent via IMAP: {e}")
+        print(f"  Available folders: {[f.name for f in MailBox(IMAP_HOST).login(IMAP_USER, IMAP_PASS).folder.list()][:10]}")
 
 
 def send_email(recipient_email, subject, body):
