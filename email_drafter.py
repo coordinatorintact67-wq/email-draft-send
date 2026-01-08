@@ -9,7 +9,6 @@ from dotenv import load_dotenv, find_dotenv
 import gspread
 from google.oauth2.service_account import Credentials
 from imap_tools import MailBox
-from agents import Agent, RunConfig, AsyncOpenAI, OpenAIChatCompletionsModel, Runner
 
 # 1. SETUP & ENVIRONMENT
 load_dotenv(find_dotenv())
@@ -21,8 +20,6 @@ def get_env_var(var_name):
     return val
 
 # Load credentials
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-GEMINI_API_KEY = get_env_var("GEMINI_API_KEY")
 IMAP_HOST = "imap.hostinger.com"
 IMAP_USER = get_env_var("IMAP_USER")
 IMAP_PASS = get_env_var("IMAP_PASS")
@@ -30,57 +27,48 @@ SHEET_NAME = get_env_var("GOOGLE_SHEET_NAME")
 WORKSHEET_NAME = get_env_var("GOOGLE_WORKSHEET_NAME")
 CREDENTIALS_FILE = "decisive-coda-477814-g9-19c85fd06150.json"  # Path to your Google Service Account JSON
 
-# 2. AI AGENT CONFIGURATION (OpenRouter)
 
-# Use OpenRouter API
-if OPENROUTER_API_KEY:
-    provider = AsyncOpenAI(
-        api_key=OPENROUTER_API_KEY,
-        base_url="https://openrouter.ai/api/v1",
-    )
-    model = OpenAIChatCompletionsModel(
-        model="openai/gpt-4o-mini",
-        openai_client=provider,
-    )
-    print("Using OpenRouter API (openai/gpt-4o-mini)")
-else:
-    raise ValueError("OPENROUTER_API_KEY not found. Please add it to .env file")
+def generate_fixed_email_content(row_data):
+    """Generate fixed email content based on row data"""
+    # Extract and clean data
+    channel_name = row_data.get('name', 'YouTube Creator').replace('\n', '').replace('\r', '').strip()
 
-run_config = RunConfig(
-    model=model,
-    model_provider=provider,
-    tracing_disabled=True,
-)
+    # Extract just the subscriber count without the word "subscribers"
+    raw_subscriber = row_data.get('subscriber', '1000')
+    import re
+    subscriber_match = re.search(r'([\d.,]+[KMB]?)', raw_subscriber) if raw_subscriber else None
+    if subscriber_match:
+        subscriber_count = subscriber_match.group(1)
+    else:
+        subscriber_count = raw_subscriber or '1000'
 
-agent = Agent(
-    instructions="""You are a professional email writer.
-    Write a highly personalized, concise outreach email.
-    Use the provided channel name and category to make it relevant.
-    Do not use placeholders like [Your Name], sign off as 'Team Automation'.""",
-    name="Email Drafter Agent",
-)
+    channel_niche = row_data.get('catagory', 'General').replace('\n', '').replace('\r', '').strip()
 
-async def generate_email_body(row_data):
-    """
-    row_data: dictionary with name, email, channel, subscriber, catagory
-    """
-    prompt = f"""
-    Write an email to {row_data['name']} who runs the YouTube channel '{row_data['channel']}'.
-    The channel is in the '{row_data['catagory']}' category and has {row_data['subscriber']} subscribers.
-    Subject line should be catchy.
-    Format:
-    Subject: [Catchy Subject]
-    ---
-    [Email Body]
-    """
+    # Fixed email body with proper formatting
+    email_body = f"""Dear {channel_name},
 
-    # Use OpenRouter API
-    result = await Runner.run(
-        agent,
-        input=prompt,
-        run_config=run_config,
-    )
-    return result.final_output
+My name is Syed Murtaza Hassam. With over six years in the YouTube, Instagram, and TikTok space and a background in video production I bring proven growth expertise. I have managed, edited videos, and designed assets for every kind of content. My priority is reliability: I guarantee on-time delivery, every single time. I have helped channels scale up to 4M+ subscribers, with one of my edits hitting 4.4M views on a single video.
+
+I have been following your channel {channel_name} and am highly impressed with the quality of your content in the {channel_niche} space. Achieving {subscriber_count} subscribers is a strong foundation, and I am confident that my expertise can help you accelerate your scaling and maximise your channel's growth more efficiently.
+
+What I deliver:
+1. High-CTR Thumbnails.
+2. Engaging Video Edits.
+3. Complete YouTube management & SEO.
+
+If you'd like, I can create a FREE sample Thumbnail or Video Edit for your next video — no commitments.
+
+Please have a look at my Portfolio attached down below.
+syedmurtazahassam.com
+
+Best Regards,
+
+Syed Murtaza Hassam"""
+
+    subject = f"Collaboration Opportunity with {channel_name}"
+
+    return subject, email_body
+
 
 # 3. GOOGLE SHEETS FETCHING
 def fetch_sheet_data():
@@ -149,33 +137,28 @@ async def main():
         rows = fetch_sheet_data()
         print(f"Found {len(rows)} rows to process.")
 
-        for i, row in enumerate(rows, 1):
-            print(f"\nProcessing row {i}/{len(rows)}: {row['channel']}")
+        # Process first 1000 rows as a batch (or all if less than 1000)
+        batch_size = min(1000, len(rows))
+        batch_rows = rows[:batch_size]
 
-            # 1. Generate Content
+        print(f"Processing batch of {len(batch_rows)} rows...")
+
+        for i, row in enumerate(batch_rows, 1):
+            print(f"\nProcessing row {i}/{len(batch_rows)}: {row.get('channel')}")
+
+            # 1. Generate Fixed Content (no AI)
             try:
-                ai_output = await generate_email_body(row)
-
-                # Split Subject and Body
-                if "---" in ai_output:
-                    subject_part, body_part = ai_output.split("---", 1)
-                    subject = subject_part.replace("Subject:", "").strip()
-                    body = body_part.strip()
-                else:
-                    subject = f"Collaboration with {row['channel']}"
-                    body = ai_output
+                subject, body = generate_fixed_email_content(row)
             except Exception as e:
-                print(f"  AI generation failed, using template: {e}")
-                # Fallback to template
-                name = row.get('name', 'Creator')
+                print(f"  Content generation failed: {e}")
+                # Fallback to basic template
+                name = row.get("name", "Creator")
                 subject = f"Collaboration Opportunity with {name}"
                 body = f"""Hi {name},
 
-I hope this message finds you well! I've been following your YouTube channel '{row['channel']}' and love your content in the {row['catagory']} space. With {row['subscriber']} subscribers, your influence is impressive.
+I hope this message finds you well! I've been following your YouTube channel '{row.get('channel')}' and love your content in the {row.get('catagory')} space.
 
 I'd love to discuss a potential collaboration opportunity that could benefit both our audiences.
-
-Would you be open to a quick chat to explore how we might work together?
 
 Best regards,
 Team Automation"""
