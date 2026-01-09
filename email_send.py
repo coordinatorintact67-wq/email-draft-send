@@ -50,7 +50,7 @@ if SAVE_TO_SENT:
 # IMPORTANT: if EMAIL_SEND_DRY_RUN=1, nothing is sent and nothing is saved.
 
 # Dry run (default enabled)
-DRY_RUN = os.getenv("EMAIL_SEND_DRY_RUN", "1").strip().lower() in {"1", "true", "yes", "y"}
+DRY_RUN = os.getenv("EMAIL_SEND_DRY_RUN", "0").strip().lower() in {"1", "true", "yes", "y"}
 
 # Google Sheets
 SHEET_NAME = get_env_var("GOOGLE_SHEET_NAME")
@@ -79,26 +79,34 @@ def generate_fixed_email_content(row_data):
     channel_niche = row_data.get('catagory', 'General').replace('\n', '').replace('\r', '').strip()
 
     # Fixed email body with proper formatting
-    email_body = f"""Dear {channel_name},
+    # HTML Email Body
+    email_body = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #000;">
+        <p>Dear {channel_name},</p>
+        
+        <p>My name is Syed Murtaza Hassam. With over <b>six years</b> in the YouTube, Instagram, and TikTok space and a background in video production I bring proven growth expertise. I have managed, edited videos, and designed assets for every kind of content. My priority is reliability: <i>I guarantee on-time delivery, every single time.</i> I have helped channels scale up to <b>4M+ subscribers</b>, with one of my edits hitting <b>4.4M views</b> on a single video.</p>
+        
+        <p>I have been following your channel <b>{channel_name}</b> and am highly impressed with the quality of your content in the {channel_niche} space. Achieving <b>{subscriber_count} subscribers</b> is a strong foundation, and I am confident that my expertise can help you accelerate your scaling and maximise your channel's growth more efficiently.</p>
+        
+        <p><b>What I deliver:</b><br>
+        1. High-CTR Thumbnails.<br>
+        2. Engaging Video Edits.<br>
+        3. Complete YouTube management & SEO.</p>
+        
+        <p>If you'd like, I can create a <b>FREE sample Thumbnail or Video Edit</b> for your next video — no commitments.</p>
+        
+        <p>Please have a look at my Portfolio attached down below.<br>
+        <a href="https://syedmurtazahassam.com">syedmurtazahassam.com</a></p>
+        
+        <p>Best Regards,</p>
+        
+        <p><b>Syed Murtaza Hassam</b></p>
+      </body>
+    </html>
+    """
 
-My name is Syed Murtaza Hassam. With over six years in the YouTube, Instagram, and TikTok space and a background in video production I bring proven growth expertise. I have managed, edited videos, and designed assets for every kind of content. My priority is reliability: I guarantee on-time delivery, every single time. I have helped channels scale up to 4M+ subscribers, with one of my edits hitting 4.4M views on a single video.
-
-I have been following your channel {channel_name} and am highly impressed with the quality of your content in the {channel_niche} space. Achieving {subscriber_count} subscribers is a strong foundation, and I am confident that my expertise can help you accelerate your scaling and maximise your channel's growth more efficiently.
-
-What I deliver:
-1. High-CTR Thumbnails.
-2. Engaging Video Edits.
-3. Complete YouTube management & SEO.
-
-If you'd like, I can create a FREE sample Thumbnail or Video Edit for your next video — no commitments.
-
-Please have a look at my Portfolio attached down below.
-syedmurtazahassam.com
-
-Best Regards,
-
-Syed Murtaza Hassam"""
-
+    # Append timestamp to subject to prevent threading during testing
     subject = f"Collaboration Opportunity with {channel_name}"
 
     return subject, email_body
@@ -128,8 +136,17 @@ def _build_message(recipient_email, subject, body):
     msg["To"] = recipient_email
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid()
-    msg["Reply-To"] = SMTP_USER
-    msg.set_content(body)
+
+
+    # Create plain text version by stripping HTML
+    import re
+    plain_body = re.sub(r'<[^>]+>', '', body)
+    
+    # 1. Set plain text content first
+    msg.set_content(plain_body)
+    
+    # 2. Add HTML version as alternative
+    msg.add_alternative(body, subtype='html')
 
     if os.path.exists(ATTACHMENTS_DIR):
         files = [
